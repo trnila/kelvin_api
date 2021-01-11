@@ -1,0 +1,75 @@
+#!/usr/bin/python3
+import os
+import requests
+import argparse
+import tempfile
+import tarfile
+import re
+import io
+import subprocess
+
+BASE_URL = 'https://kelvin.cs.vsb.cz'
+
+config_dir = os.environ.get('XDG_CONFIG_HOME', None) or os.path.join(os.environ['HOME'], '.config')
+with open(os.path.join(config_dir, 'kelvin')) as f:
+    token = f.read().strip()
+
+def untar(session, url, dest='.'):
+    res = session.get(url)
+    with tarfile.open(fileobj=io.BytesIO(res.content)) as tar:
+        tar.extractall(dest)
+
+def get(args):
+    m = re.match(f'{BASE_URL}/task/(?P<student>[^/]+)/(?P<assignment>\d+)/(?P<submit>\d+)', args.url)
+    if not m:
+        print("Invalid url")
+        exit(1)
+    parts = m.groupdict()
+    download_url = f'{BASE_URL}/task/{parts["assignment"]}/{parts["student"]}/{parts["submit"]}/download'
+
+    s = requests.Session()
+    s.headers['Authorization'] = f'Bearer {token}'
+
+    res = s.get(download_url)
+    with tempfile.TemporaryDirectory() as temp_dir:
+        os.chdir(temp_dir)
+
+        res = s.get(args.url)
+        m = re.search(r'href="([^"]+)"[^>]+>Download all tests', res.content.decode('utf-8'))
+        if m:
+            print("Downloading tests")
+            os.mkdir("tests")
+            untar(s, f"{BASE_URL}/{m.group(1)}", "tests")
+
+        untar(s, download_url)
+
+        subprocess.check_call(["chmod", "-R", "a+rwX", temp_dir])
+        subprocess.check_call(["xhost", "+localhost"])
+        subprocess.Popen([
+            "sudo",
+            "systemd-run",
+            "--working-directory", "/submit",
+            "-E", f"PS1={parts['student']}$ ",
+            "-E", "DISPLAY=:0",
+            "-E", "HOME=/tmp",
+            #"-p", "PrivateDevices=yes",
+            "-p", "PrivateNetwork=yes",
+            "-p", "DynamicUser=yes",
+            "-p", f"BindPaths={temp_dir}:/submit:norbind",
+            "-p", f"BindPaths=/tmp/.X11-unix:/tmp/.X11-unix:norbind",
+            "-p", "ProtectSystem=strict",
+            "-p", "ProtectHome=true",
+            "-t",
+            "/bin/bash", "-i", "-c", f"if [ -f Makefile ]; then make clean; make; else gcc *.c -o main -fsanitize=address -g; fi; PS1='{parts['student']} \W $ ' exec bash --norc"
+        ]).wait()
+
+
+parser = argparse.ArgumentParser()
+subparsers = parser.add_subparsers(dest='cmd', required=True)
+
+p = subparsers.add_parser('get')
+p.add_argument('url')
+
+args = parser.parse_args()
+
+get(args)
