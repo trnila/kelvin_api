@@ -19,29 +19,39 @@ def untar(session, url, dest='.'):
     with tarfile.open(fileobj=io.BytesIO(res.content)) as tar:
         tar.extractall(dest)
 
-def get(args):
+class Api:
+    def __init__(self, base_url, token):
+        self.base_url = base_url
+        self.s = requests.Session()
+        self.s.headers['Authorization'] = f'Bearer {token}'
+
+    def url(self, path):
+        if path.startswith("https://"):
+            return path
+        return "".join([self.base_url, path])
+
+    def get(self, path):
+        return self.s.get(self.url(path))
+
+def get(api, args):
     m = re.match(f'{BASE_URL}/task/(?P<student>[^/]+)/(?P<assignment>\d+)/(?P<submit>\d+)', args.url)
     if not m:
         print("Invalid url")
         exit(1)
     parts = m.groupdict()
-    download_url = f'{BASE_URL}/task/{parts["assignment"]}/{parts["student"]}/{parts["submit"]}/download'
+    download_url = f'/task/{parts["assignment"]}/{parts["student"]}/{parts["submit"]}/download'
 
-    s = requests.Session()
-    s.headers['Authorization'] = f'Bearer {token}'
-
-    res = s.get(download_url)
     with tempfile.TemporaryDirectory() as temp_dir:
         os.chdir(temp_dir)
 
-        res = s.get(args.url)
+        res = api.get(args.url)
         m = re.search(r'href="([^"]+)"[^>]+>Download all tests', res.content.decode('utf-8'))
         if m:
             print("Downloading tests")
             os.mkdir("tests")
-            untar(s, f"{BASE_URL}/{m.group(1)}", "tests")
+            untar(api, f"/{m.group(1)}", "tests")
 
-        untar(s, download_url)
+        untar(api, download_url)
 
         subprocess.check_call(["chmod", "-R", "a+rwX", temp_dir])
         subprocess.check_call(["xhost", "+localhost"])
@@ -72,4 +82,5 @@ p.add_argument('url')
 
 args = parser.parse_args()
 
-get(args)
+api = Api(BASE_URL, token)
+(locals()[args.cmd])(api, args)
