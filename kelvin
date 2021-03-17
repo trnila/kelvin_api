@@ -9,6 +9,7 @@ import io
 import subprocess
 
 BASE_URL = 'https://kelvin.cs.vsb.cz'
+#BASE_URL = 'http://localhost:8000'
 
 config_dir = os.environ.get('XDG_CONFIG_HOME', None) or os.path.join(os.environ['HOME'], '.config')
 with open(os.path.join(config_dir, 'kelvin')) as f:
@@ -25,6 +26,10 @@ class Api:
         self.s = requests.Session()
         self.s.headers['Authorization'] = f'Bearer {token}'
 
+        res = self.get('/')
+        self.s.headers['X-CSRFToken'] = re.search('<meta name="csrf-token" content="([^"]+)"', res.text).group(1)
+        self.s.headers['Referer'] = base_url
+
     def url(self, path):
         if path.startswith("https://"):
             return path
@@ -32,6 +37,13 @@ class Api:
 
     def get(self, path):
         return self.s.get(self.url(path))
+
+    def post(self, path, *kargs, **kwargs):
+        return self.s.post(self.url(path), *kargs, **kwargs)
+
+    def put(self, path, *kargs, **kwargs):
+        return self.s.put(self.url(path), *kargs, **kwargs)
+
 
 def get(api, args):
     m = re.match(f'{BASE_URL}/task/(?P<student>[^/]+)/(?P<assignment>\d+)/(?P<submit>\d+)', args.url)
@@ -73,14 +85,22 @@ def get(api, args):
             "/bin/bash", "-i", "-c", f"if [ -f Makefile ]; then make clean; make; else gcc *.c -o main -fsanitize=address -g; fi; PS1='{parts['student']} \W $ ' exec bash --norc"
         ]).wait()
 
+def script(api, args):
+    with open(args.path) as f:
+        exec(f.read())
 
-parser = argparse.ArgumentParser()
-subparsers = parser.add_subparsers(dest='cmd', required=True)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest='cmd', required=True)
 
-p = subparsers.add_parser('get')
-p.add_argument('url')
+    p = subparsers.add_parser('get')
+    p.add_argument('url')
 
-args = parser.parse_args()
+    p = subparsers.add_parser('script')
+    p.add_argument('path')
+    p.add_argument('remaining', nargs=argparse.REMAINDER)
 
-api = Api(BASE_URL, token)
-(locals()[args.cmd])(api, args)
+    args = parser.parse_args()
+
+    api = Api(BASE_URL, token)
+    (locals()[args.cmd])(api, args)
