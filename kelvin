@@ -26,8 +26,6 @@ class Api:
         self.s = requests.Session()
         self.s.headers['Authorization'] = f'Bearer {token}'
 
-        res = self.get('/')
-        self.s.headers['X-CSRFToken'] = re.search('<meta name="csrf-token" content="([^"]+)"', res.text).group(1)
         self.s.headers['Referer'] = base_url
 
     def url(self, path):
@@ -46,12 +44,13 @@ class Api:
 
 
 def get(api, args):
-    m = re.match(f'{BASE_URL}/task/(?P<student>[^/]+)/(?P<assignment>\d+)/(?P<submit>\d+)', args.url)
+    m = re.search(f'task/\d+/(?P<student>[^/]+)', args.url)
     if not m:
         print("Invalid url")
         exit(1)
     parts = m.groupdict()
-    download_url = f'/task/{parts["assignment"]}/{parts["student"]}/{parts["submit"]}/download'
+
+    download_url = f'{args.url.split("#")[0].rstrip("/")}/download'
 
     with tempfile.TemporaryDirectory() as temp_dir:
         os.chdir(temp_dir)
