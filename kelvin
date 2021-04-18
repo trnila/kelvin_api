@@ -11,8 +11,8 @@ import subprocess
 BASE_URL = 'https://kelvin.cs.vsb.cz'
 #BASE_URL = 'http://localhost:8000'
 
-config_dir = os.environ.get('XDG_CONFIG_HOME', None) or os.path.join(os.environ['HOME'], '.config')
-with open(os.path.join(config_dir, 'kelvin')) as f:
+config_dir = os.environ.get('XDG_CONFIG_HOME', None) or os.path.join(os.environ['HOME'], '.config', 'kelvin')
+with open(os.path.join(config_dir, 'token')) as f:
     token = f.read().strip()
 
 def untar(session, url, dest='.'):
@@ -64,6 +64,20 @@ def get(api, args):
 
         untar(api, download_url)
 
+        bash_history_path = os.path.join(config_dir, "bash_history")
+        if not os.path.exists(bash_history_path):
+            with open(bash_history_path, 'a'): pass
+
+        subprocess.Popen([
+            "docker", "run", "-w", "/work",
+            "-v", "/tmp:/tmp",
+            "-v", f"{temp_dir}:/work",
+            "-v", f"{bash_history_path}:/root/.bash_history",
+            "-e", "DISPLAY=:0",
+            "-it", "kelvin/gcc",
+            "sh", "-c", "/entry.py; cat result.html; rm result.html; echo; exec bash"
+        ]).wait()
+        """
         subprocess.check_call(["chmod", "-R", "a+rwX", temp_dir])
         subprocess.check_call(["xhost", "+localhost"])
         subprocess.Popen([
@@ -81,8 +95,10 @@ def get(api, args):
             "-p", "ProtectSystem=strict",
             "-p", "ProtectHome=true",
             "-t",
-            "/bin/bash", "-i", "-c", f"if [ -f Makefile ]; then make clean; make; else gcc *.c -o main -fsanitize=address -g; fi; PS1='{parts['student']} \W $ ' exec bash --norc"
+#            "/bin/bash", "-i", "-c", f"if [ -f Makefile ]; then make clean; make; else gcc *.c -o main -fsanitize=address -g; fi; PS1='{parts['student']} \W $ ' exec bash --norc"
+            "/bin/bash", "-i", "-c", f"if [ -f Makefilef ]; then make clean; make; else g++ *.cpp -lpthread -o main -fsanitize=address -g; fi; PS1='{parts['student']} \W $ ' exec bash --norc"
         ]).wait()
+        """
 
 def script(api, args):
     with open(args.path) as f:
